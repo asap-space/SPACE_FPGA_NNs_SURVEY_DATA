@@ -37,10 +37,10 @@ class MarkdownTableVisualizer:
         # Add sample table for demonstration
         self.markdown_input.insert(tk.END, """| Name | Age | City |
 |------|-----|------|
-| John | 30  | New York |
-| Alice | 25 | London |
-| Bob | 35 | Paris |
-| Eve | 28 | Tokyo |""")
+| **John** | 30  | New York |
+| *Alice* | 25 | London |
+| Bob | **35** | Paris |
+| Eve | 28 | **Tokyo** |""")
         
         # Initial render
         self.render_table()
@@ -144,24 +144,39 @@ class MarkdownTableVisualizer:
         if len(lines) < 3:  # Need at least header, separator, and one data row
             return None, None
         
-        # Extract headers
-        header_match = re.findall(r'\|(.*?)\|', lines[0])
-        if not header_match:
+        # Extract headers by splitting on pipe and removing empty entries
+        header_line = lines[0].strip()
+        if not header_line.startswith('|'):
+            header_line = '|' + header_line
+        if not header_line.endswith('|'):
+            header_line = header_line + '|'
+        
+        headers = [h.strip() for h in header_line.split('|')[1:-1]]
+        if not headers:
             return None, None
         
-        headers = [h.strip() for h in header_match]
-        
         # Validate separator line (second line)
-        sep_line = lines[1]
-        if not all(c in '|-:' for c in sep_line.strip()):
+        sep_line = lines[1].strip()
+        if not sep_line.startswith('|'):
+            sep_line = '|' + sep_line
+        if not sep_line.endswith('|'):
+            sep_line = sep_line + '|'
+            
+        separators = sep_line.split('|')[1:-1]
+        if not all(all(c in '|-:' for c in sep.strip()) for sep in separators):
             return None, None
         
         # Extract data rows
         data = []
         for i in range(2, len(lines)):
-            row_match = re.findall(r'\|(.*?)\|', lines[i])
-            if row_match:
-                row_data = [cell.strip() for cell in row_match]
+            row_line = lines[i].strip()
+            if row_line:
+                if not row_line.startswith('|'):
+                    row_line = '|' + row_line
+                if not row_line.endswith('|'):
+                    row_line = row_line + '|'
+                    
+                row_data = [cell.strip() for cell in row_line.split('|')[1:-1]]
                 data.append(row_data)
         
         return headers, data
