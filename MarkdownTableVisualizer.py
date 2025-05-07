@@ -43,7 +43,8 @@ class MarkdownTableVisualizer:
 | Eve | 28 | **Tokyo** |""")
         
         # Initial render
-        self.render_table()
+        # Wait a short moment before rendering to ensure UI is fully loaded
+        self.root.after(100, self.render_table)
         
     def setup_left_frame(self):
         # Title
@@ -113,11 +114,6 @@ class MarkdownTableVisualizer:
         self.font_size.set(10)
         self.font_size.pack(side=tk.LEFT, padx=5)
         
-        # Bold headers checkbox
-        self.bold_headers_var = tk.BooleanVar(value=True)
-        self.bold_headers = ttk.Checkbutton(self.text_frame, text="Bold Headers", variable=self.bold_headers_var)
-        self.bold_headers.pack(side=tk.LEFT, padx=5)
-        
         # File options frame
         self.file_frame = ttk.Frame(self.bottom_frame)
         self.file_frame.pack(side=tk.RIGHT, fill=tk.X, padx=(5, 0))
@@ -181,78 +177,133 @@ class MarkdownTableVisualizer:
         
         return headers, data
     
+    def parse_markdown_formatting(self, text):
+        """Parse markdown formatting in text and return formatting info"""
+        original_text = text
+        processed_text = text
+        
+        # Formatting settings
+        is_bold = False
+        is_italic = False
+        
+        # Check for bold (either **text** or __text__)
+        bold_pattern = r'(\*\*|__)(.*?)(\1)'
+        bold_match = re.search(bold_pattern, processed_text)
+        if bold_match:
+            is_bold = True
+            # Replace the bold text, preserving the content
+            processed_text = re.sub(bold_pattern, r'\2', processed_text)
+        
+        # Check for italic (either *text* or _text_)
+        # But make sure it's not part of a bold marker we already processed
+        italic_pattern = r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)'
+        italic_match = re.search(italic_pattern, processed_text)
+        if italic_match:
+            is_italic = True
+            # Get the content from whichever group matched
+            italic_content = italic_match.group(1) if italic_match.group(1) is not None else italic_match.group(2)
+            # Replace the italic text
+            processed_text = re.sub(italic_pattern, italic_content, processed_text, 1)
+        
+        return {
+            'original': original_text,
+            'text': processed_text,
+            'weight': 'bold' if is_bold else 'normal',
+            'style': 'italic' if is_italic else 'normal'
+        }
+    
     def render_table(self):
         """Render the markdown table as an image"""
-        markdown_text = self.markdown_input.get("1.0", tk.END)
-        headers, data = self.parse_markdown_table(markdown_text)
-        
-        if not headers or not data:
-            messagebox.showerror("Error", "Invalid markdown table format")
-            return
-        
-        # Create new figure
-        self.fig.clear()
-        
-        # Get styling options
-        header_bg = self.header_color.get()
-        row_bg = self.row_colors.get().split(',')
-        font_size = int(self.font_size.get())
-        bold_headers = self.bold_headers_var.get()
-        
-        # Create the table
-        ax = self.fig.add_subplot(111)
-        ax.axis('off')
-        
-        # Calculate cell text and colors
-        cell_text = data
-        
-        # Create color arrays with proper dimensions
-        # Each row in cellColours needs to be a list of colors for each cell in that row
-        cell_colors = []
-        for i in range(len(data)):
-            row_color = row_bg[i % len(row_bg)]
-            cell_colors.append([row_color] * len(headers))
-        
-        # Create the table
-        header_props = {
-            'fontsize': font_size,
-            'fontweight': 'bold' if bold_headers else 'normal'
-        }
-        
-        cell_props = {
-            'fontsize': font_size
-        }
-        
-        table = ax.table(
-            cellText=cell_text,
-            colLabels=headers,
-            loc='center',
-            cellLoc='center',
-            colColours=[header_bg] * len(headers),
-            cellColours=cell_colors
-        )
-        
-        # Style the table
-        table.auto_set_font_size(False)
-        table.scale(1.2, 1.5)  # Adjust table size
-        
-        # Apply styling to headers
-        for i in range(len(headers)):
-            cell = table.get_celld()[(0, i)]
-            cell.set_text_props(**header_props)
+        try:
+            markdown_text = self.markdown_input.get("1.0", tk.END)
+            headers, data = self.parse_markdown_table(markdown_text)
             
-        # Apply styling to cells
-        for i in range(len(data)):
-            for j in range(len(headers)):
-                cell = table.get_celld()[(i+1, j)]
-                cell.set_text_props(**cell_props)
-        
-        # Adjust layout
-        self.fig.tight_layout()
-        
-        # Display the table
-        self.canvas.draw()
-        
+            if not headers or not data:
+                messagebox.showerror("Error", "Invalid markdown table format")
+                return
+            
+            # Create new figure
+            self.fig.clear()
+            
+            # Get styling options
+            header_bg = self.header_color.get()
+            row_bg = self.row_colors.get().split(',')
+            font_size = int(self.font_size.get())
+            
+            # Create the table
+            ax = self.fig.add_subplot(111)
+            ax.axis('off')
+            
+            # Process cell text and formatting
+            cell_text = []
+            cell_formatting = []
+            
+            for row in data:
+                # Pad row if needed
+                while len(row) < len(headers):
+                    row.append('')
+                
+                # Keep only columns that match headers
+                row = row[:len(headers)]
+                
+                # Process text and store formatting
+                row_text = []
+                row_format = []
+                
+                for cell in row:
+                    formatting = self.parse_markdown_formatting(cell)
+                    row_text.append(formatting['text'])
+                    row_format.append(formatting)
+                
+                cell_text.append(row_text)
+                cell_formatting.append(row_format)
+            
+            # Create color arrays with proper dimensions
+            cell_colors = []
+            for i in range(len(cell_text)):
+                row_color = row_bg[i % len(row_bg)]
+                cell_colors.append([row_color] * len(headers))
+            
+            # Create the table
+            table = ax.table(
+                cellText=cell_text,
+                colLabels=headers,
+                loc='center',
+                cellLoc='center',
+                colColours=[header_bg] * len(headers),
+                cellColours=cell_colors
+            )
+            
+            # Style the table
+            table.auto_set_font_size(False)
+            table.scale(1.2, 1.5)  # Adjust table size
+            
+            # Apply styling to headers (always bold)
+            for i in range(len(headers)):
+                cell = table.get_celld()[(0, i)]
+                cell.set_text_props(fontsize=font_size, fontweight='bold')
+                
+            # Apply styling to data cells based on markdown formatting
+            for i in range(len(cell_text)):
+                for j in range(len(headers)):
+                    cell = table.get_celld()[(i+1, j)]
+                    format_info = cell_formatting[i][j]
+                    
+                    # Set text properties based on markdown formatting
+                    cell.set_text_props(
+                        fontsize=font_size,
+                        fontweight=format_info['weight'],
+                        fontstyle=format_info['style']
+                    )
+            
+            # Adjust layout
+            self.fig.tight_layout()
+            
+            # Display the table
+            self.canvas.draw()
+        except Exception as e:
+            messagebox.showerror("Error", f"Error rendering table: {str(e)}")
+    
     def download_image(self):
         """Save the table as an image file"""
         try:
