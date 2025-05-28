@@ -1,7 +1,11 @@
 import argparse
 import re
+from pathlib import Path
+
 
 EXCLUDED_VALUES = {"-", "\\", "/", ""}
+
+
 def clean_cell(s):
     """Convert string to appropriate data type (int, float, or string) with replacements"""
     out = s.replace("\\*", "*")
@@ -15,38 +19,40 @@ def clean_cell(s):
     out = out.replace("<br>", "\\n")
     return out.strip()
 
+
 def parse_markdown_table(lines):
     """Parse markdown table from lines and return list of filtered dictionaries"""
     table_start = None
     for i, line in enumerate(lines):
         line = line.strip()
-        if line.startswith('|') and i+1 < len(lines) and '---' in lines[i+1]:
+        if line.startswith("|") and i + 1 < len(lines) and "---" in lines[i + 1]:
             table_start = i
             break
     if table_start is None:
         raise ValueError("No table found in the markdown content.")
-    
+
     header_line = lines[table_start].strip()
     data_lines = []
-    for line in lines[table_start + 2:]:
+    for line in lines[table_start + 2 :]:
         line = line.strip()
-        if line.startswith('|'):
+        if line.startswith("|"):
             data_lines.append(line)
         else:
             break
-    
-    headers = [cell.strip() for cell in header_line.split('|')[1:-1]]
-    
+
+    headers = [cell.strip() for cell in header_line.split("|")[1:-1]]
+
     papers = []
     for data_line in data_lines:
-        cells = [clean_cell(cell) for cell in re.split(r'(?<!\\)\|', data_line)[1:-1]]
+        cells = [clean_cell(cell) for cell in re.split(r"(?<!\\)\|", data_line)[1:-1]]
         paper = {}
         for header, value in zip(headers, cells):
             if value not in EXCLUDED_VALUES:
                 paper[header] = value
         papers.append(paper)
-    
+
     return headers, papers
+
 
 def generate_python_code(headers, papers):
     """Generate Python code with dynamic class structure"""
@@ -54,27 +60,29 @@ def generate_python_code(headers, papers):
         "import pandas as pd\n\n",
         "class PaperData:",
         "    def __init__(self):",
-        "        self.data = {"
+        "        self.data = {",
     ]
-    
+
     # Add headers with proper escaping
     for header in headers:
         escaped_header = header.replace('"', '\\"')
         code_lines.append(f'            "{escaped_header}": [],')
-    
-    code_lines.extend([
-        "        }",
-        "",
-        "    def add_entry(self, new_entry):",
-        "        for key in self.data:",
-        "            self.data[key].append(new_entry.get(key, None))",
-        "",
-        "    def to_dataframe(self):",
-        "        return pd.DataFrame(self.data)",
-        "",
-    ])
+
+    code_lines.extend(
+        [
+            "        }",
+            "",
+            "    def add_entry(self, new_entry):",
+            "        for key in self.data:",
+            "            self.data[key].append(new_entry.get(key, None))",
+            "",
+            "    def to_dataframe(self):",
+            "        return pd.DataFrame(self.data)",
+            "",
+        ]
+    )
     var_names = []
-    
+
     for i, paper in enumerate(papers):
         var_name = f"paper_{i+1}"
         var_names.append(var_name)
@@ -86,32 +94,56 @@ def generate_python_code(headers, papers):
                 escaped_value = str(value).replace('"', '\\"')
                 code_lines.append(f'    "{key}": "{escaped_value}",')
         code_lines.append("}\n")
-    
+
     # Add the papers list
     code_lines.append(f"papers_list = [{', '.join(var_names)}]")
-    return '\n'.join(code_lines)
+    return "\n".join(code_lines)
 
-def main():
-    parser = argparse.ArgumentParser(description='Parse markdown table to Python dictionaries with list')
-    parser.add_argument('input_file', help='Input markdown file path')
-    parser.add_argument('output_file', help='Output Python file path')
-    args = parser.parse_args()
-    
-    with open(args.input_file, 'r') as f:
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def convert(file):
+    """Decorator to allow the script to be run as a module."""
+    path = Path(file)
+
+    with open(path, "r") as f:
         lines = f.readlines()
-    
     try:
         headers, papers = parse_markdown_table(lines)
     except ValueError as e:
         print(f"Error: {e}")
         return
-    
+
     python_code = generate_python_code(headers, papers)
-    
-    with open(args.output_file, 'w') as f:
+    output_path = path.with_suffix(".py")
+    output_path.write_text(python_code, encoding="utf-8")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Parse markdown table to Python dictionaries with list"
+    )
+    parser.add_argument("input_file", help="Input markdown file path")
+    parser.add_argument("output_file", help="Output Python file path")
+    args = parser.parse_args()
+
+    with open(args.input_file, "r") as f:
+        lines = f.readlines()
+
+    try:
+        headers, papers = parse_markdown_table(lines)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return
+
+    python_code = generate_python_code(headers, papers)
+
+    with open(args.output_file, "w") as f:
         f.write(python_code)
-    
+
     print(f"Successfully generated {args.output_file} with {len(papers)} papers")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
