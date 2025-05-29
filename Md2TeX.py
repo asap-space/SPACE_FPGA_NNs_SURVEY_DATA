@@ -1,9 +1,9 @@
 # md2latex.py
-"""md2latex.py – Convert a pipe‑delimited Markdown table file to a LaTeX
+"""md2latex.py - Convert a pipe-delimited Markdown table file to a LaTeX
 `tabular` environment.
 
-The script is intentionally minimal: **give it one argument – the path to a
-`.md` file that contains exactly one table – and it prints the LaTeX code to
+The script is intentionally minimal: **give it one argument - the path to a
+`.md` file that contains exactly one table - and it prints the LaTeX code to
 stdout**. No other options needed.
 
 Example
@@ -31,23 +31,19 @@ from typing import List
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-_LATEX_ESCAPE = {
-    "#": r"\#",
-    "$": r"\$",
-    "%": r"\%",
-    "&": r"\&",
-    "~": r"\\textasciitilde{}",
-    "_": r"\\_",
-    "^": r"\\textasciicircum{}",
-    "\\": r"\\textbackslash{}",
-    "{": r"\\{",
-    "}": r"\\}",
-}
-
-
 def _escape(text: str) -> str:
-    """Escape LaTeX‑special characters inside *text*."""
-    return "".join(_LATEX_ESCAPE.get(ch, ch) for ch in text)
+    """Escape LaTeX-special characters inside *text*."""
+    out = text.replace("\\*", "*")
+    #out = out.replace("\\\\", "\\")
+    #out = out.replace("\\|", "|")
+    out = out.replace("\\_", "_")
+    out = out.replace("\\%", "%")
+    out = out.replace("%", "\\%")
+    out = out.replace("\\>", ">")
+    out = out.replace("<br>", "\\newline ")
+    out = out.replace("BRAM_", "BRAM\\_")
+    out = out.replace(" E^2", " E\\^2")
+    return out.strip()
 
 
 def _alignment_code(cell: str) -> str:
@@ -66,19 +62,16 @@ def _alignment_code(cell: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
-def markdown_table_to_latex(path: str | Path) -> str:
-    """Convert the *first* markdown table found in *path* to LaTeX.
 
-    The file must contain a *single* pipe‑delimited table (header, separator
-    row, and data rows). The function returns a `\begin{tabular}...` snippet
-    including `\hline`s after each row.
-    """
+def markdown_table_to_latex(path: str | Path) -> str:
     path = Path(path)
     if not path.is_file():  # pragma: no cover
         raise FileNotFoundError(path)
 
     # Read and keep only non‑blank lines.
-    lines: List[str] = [ln.strip() for ln in path.read_text(encoding="utf‑8").splitlines() if ln.strip()]
+    lines: List[str] = [
+        ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()
+    ]
     if len(lines) < 2:
         raise ValueError("File doesn't appear to contain a markdown table")
 
@@ -91,11 +84,15 @@ def markdown_table_to_latex(path: str | Path) -> str:
     aligns = [_alignment_code(cell) for cell in separator_cells]
     colspec = "|" + "|".join(aligns) + "|"
 
-    def _to_row(cells: List[str]) -> str:
-        return " & ".join(_escape(c) for c in cells) + r" \\ \hline"
+    def _to_row(cells: List[str], is_header: bool = False) -> str:
+        if is_header:
+            escaped_cells = [f"\\textbf{{{_escape(c)}}}" for c in cells]
+        else:
+            escaped_cells = [_escape(c) for c in cells]
+        return " & ".join(escaped_cells) + r" \\ \hline"
 
     rows: List[str] = [
-        _to_row(header_cells),
+        _to_row(header_cells, is_header=True),
     ]
     for row in data_rows:
         rows.append(_to_row([c.strip() for c in row.strip("|").split("|")]))
@@ -111,8 +108,9 @@ def convert(file):
     """Decorator to allow the script to be run as a module."""
     path = Path(file)
     latex_output = markdown_table_to_latex(file)
-    output_path = path.with_suffix('.tex')
+    output_path = path.with_suffix(".tex")
     output_path.write_text(latex_output, encoding="utf-8")
+
 
 def _main() -> None:  # pragma: no cover
     if len(sys.argv) != 2 or sys.argv[1] in {"-h", "--help"}:

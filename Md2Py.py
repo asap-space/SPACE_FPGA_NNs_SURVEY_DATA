@@ -118,6 +118,7 @@ def convert(file):
     python_code = generate_python_code(headers, papers)
     output_path = path.with_suffix(".py")
     output_path.write_text(python_code, encoding="utf-8")
+    print(f"Successfully generated {output_path} with {len(papers)} papers")
 
 
 def main():
@@ -127,22 +128,7 @@ def main():
     parser.add_argument("input_file", help="Input markdown file path")
     parser.add_argument("output_file", help="Output Python file path")
     args = parser.parse_args()
-
-    with open(args.input_file, "r") as f:
-        lines = f.readlines()
-
-    try:
-        headers, papers = parse_markdown_table(lines)
-    except ValueError as e:
-        print(f"Error: {e}")
-        return
-
-    python_code = generate_python_code(headers, papers)
-
-    with open(args.output_file, "w") as f:
-        f.write(python_code)
-
-    print(f"Successfully generated {args.output_file} with {len(papers)} papers")
+    convert(args.input_file)
 
 
 if __name__ == "__main__":
