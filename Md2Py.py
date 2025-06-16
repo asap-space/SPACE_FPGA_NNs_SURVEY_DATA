@@ -40,7 +40,7 @@ def parse_markdown_table(lines):
         else:
             break
 
-    headers = [cell.strip() for cell in header_line.split("|")[1:-1]]
+    headers = [clean_cell(cell.strip()) for cell in header_line.split("|")[1:-1]]
 
     papers = []
     for data_line in data_lines:

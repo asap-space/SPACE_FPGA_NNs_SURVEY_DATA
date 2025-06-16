@@ -46,16 +46,13 @@ def _escape(text: str) -> str:
     return out.strip()
 
 
-def _alignment_code(cell: str) -> str:
-    """Given a markdown alignment cell (e.g. `:---:`), return `l`, `c`, or `r`."""
-    cell = cell.strip()
-    left = cell.startswith(":")
-    right = cell.endswith(":")
-    if left and right:
-        return "c"
-    if right:
-        return "r"
-    return "l"  # default / left
+def _alignment_code(header_cells) -> str:
+    # Calculate column widths based on header lengths
+    header_lengths = [len(cell) for cell in header_cells]
+    # Create column specification with paragraph columns
+    colspec_parts = [f"p{{{width}pt}}" for width in header_lengths]
+    colspec = "|" + "|".join(colspec_parts) + "|"
+    return colspec
 
 
 # ---------------------------------------------------------------------------
@@ -80,10 +77,6 @@ def markdown_table_to_latex(path: str | Path) -> str:
     header_cells = [c.strip() for c in header.strip("|").split("|")]
     separator_cells = [c.strip() for c in separator.strip("|").split("|")]
 
-    # Column alignments from the separator row.
-    aligns = [_alignment_code(cell) for cell in separator_cells]
-    colspec = "|" + "|".join(aligns) + "|"
-
     def _to_row(cells: List[str], is_header: bool = False) -> str:
         if is_header:
             escaped_cells = [f"\\textbf{{{_escape(c)}}}" for c in cells]
@@ -98,6 +91,8 @@ def markdown_table_to_latex(path: str | Path) -> str:
         rows.append(_to_row([c.strip() for c in row.strip("|").split("|")]))
 
     body = "\n".join(rows)
+
+    colspec = _alignment_code(header_cells)
     return f"\\begin{{tabular}}{{{colspec}}}\n\\hline\n{body}\n\\end{{tabular}}"
 
 
