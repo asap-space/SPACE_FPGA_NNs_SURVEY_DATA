@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 
-EXCLUDED_VALUES = {"-", "\\", "/", ""}
+EXCLUDED_VALUES = {"-", "--", "---", "\\", "/", ""}
 
 
 def clean_cell(s):
@@ -16,6 +16,7 @@ def clean_cell(s):
     out = out.replace("\\_", "_")
     out = out.replace("\\%", "%")
     out = out.replace("\\>", ">")
+    out = out.replace("\\cite", "cite")
     out = out.replace("<br>", "\\n")
     return out.strip()
 
