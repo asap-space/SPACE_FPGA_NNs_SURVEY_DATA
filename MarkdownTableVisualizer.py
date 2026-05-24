@@ -13,73 +13,59 @@ class MarkdownTableVisualizer:
 
         self.current_headers = []
         self.markdown_text = ""
+        self.zoom_factor = 1.0
         
-        # Set up the main frame
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Create split panes
-        self.paned_window = ttk.PanedWindow(self.main_frame, orient=tk.HORIZONTAL)
-        self.paned_window.pack(fill=tk.BOTH, expand=True)
-        
-        # Left side - Markdown input
-        self.left_frame = ttk.Frame(self.paned_window)
-        self.paned_window.add(self.left_frame, weight=1)
-        
-        # Right side - Table visualization
-        self.right_frame = ttk.Frame(self.paned_window)
-        self.paned_window.add(self.right_frame, weight=1)
-        
-        self.setup_left_frame()
-        self.setup_right_frame()
+        self.setup_top_frame()
+        self.setup_viz_frame()
         self.setup_bottom_frame()
         
-    def setup_left_frame(self):
-        # Title
-        self.left_title = ttk.Label(self.left_frame, text="Markdown Table File", font=("Arial", 12, "bold"))
-        self.left_title.pack(pady=(0, 5), fill=tk.X)
+    def setup_top_frame(self):
+        self.top_controls = ttk.Frame(self.main_frame)
+        self.top_controls.pack(fill=tk.X, pady=(0, 6))
 
-        # File loader
-        self.file_button_frame = ttk.Frame(self.left_frame)
-        self.file_button_frame.pack(fill=tk.X, pady=(8, 0))
-
-        self.file_button = ttk.Button(self.file_button_frame, text="Load Markdown File", command=self.load_markdown_file)
-        self.file_button.pack(fill=tk.X, padx=6)
+        self.file_button = ttk.Button(self.top_controls, text="Load Markdown File", command=self.load_markdown_file)
+        self.file_button.pack(fill=tk.X)
         
-    def setup_right_frame(self):
-        # Title
-        self.right_title = ttk.Label(self.right_frame, text="Table Visualization", font=("Arial", 12, "bold"))
+    def setup_viz_frame(self):
+        self.right_title = ttk.Label(self.main_frame, text="Table Visualization", font=("Arial", 12, "bold"))
         self.right_title.pack(pady=(0, 5), fill=tk.X)
         
-        # Frame for visualization
-        self.viz_frame = ttk.Frame(self.right_frame)
+        self.viz_frame = ttk.Frame(self.main_frame)
         self.viz_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Scrollable container for the matplotlib canvas
         self.viz_canvas = tk.Canvas(self.viz_frame, highlightthickness=0)
         self.viz_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.viz_scrollbar_y = ttk.Scrollbar(self.viz_frame, orient=tk.VERTICAL, command=self.viz_canvas.yview)
         self.viz_scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.viz_scrollbar_x = ttk.Scrollbar(self.right_frame, orient=tk.HORIZONTAL, command=self.viz_canvas.xview)
-        self.viz_scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.bottom_scroll_frame = ttk.Frame(self.main_frame)
+        self.bottom_scroll_frame.pack(fill=tk.X)
+        self.viz_scrollbar_x = ttk.Scrollbar(self.bottom_scroll_frame, orient=tk.HORIZONTAL, command=self.viz_canvas.xview)
+        self.viz_scrollbar_x.pack(fill=tk.X)
 
         self.viz_canvas.configure(yscrollcommand=self.viz_scrollbar_y.set, xscrollcommand=self.viz_scrollbar_x.set)
 
-        self.viz_container = ttk.Frame(self.viz_canvas)
-        self.canvas_window = self.viz_canvas.create_window((0, 0), window=self.viz_container, anchor="nw")
-        self.viz_container.bind("<Configure>", self.update_scroll_region)
-
-        # Initially empty - will be filled by render_table()
         self.fig = plt.Figure(figsize=(6, 4), dpi=100)
-        self.canvas = FigureCanvasTkAgg(self.fig, self.viz_container)
+        self.canvas = FigureCanvasTkAgg(self.fig, self.viz_canvas)
         self.canvas_widget = self.canvas.get_tk_widget()
-        self.canvas_widget.pack(fill=tk.BOTH, expand=True)
+        
+        self.canvas_window = self.viz_canvas.create_window((0, 0), window=self.canvas_widget, anchor="nw")
 
-        self.viz_canvas.bind("<Configure>", self.update_scroll_region)
-        self.viz_container.bind("<MouseWheel>", self.on_mousewheel)
-        self.viz_container.bind("<Shift-MouseWheel>", self.on_shift_mousewheel)
+        self.viz_canvas.bind("<Configure>", self.on_canvas_configure)
+        self.canvas_widget.bind("<MouseWheel>", self.on_mousewheel)
+        self.canvas_widget.bind("<Shift-MouseWheel>", self.on_shift_mousewheel)
+        
+        # Windows / Mac zoom events
+        self.canvas_widget.bind("<Control-MouseWheel>", self.on_zoom)
+        self.canvas_widget.bind("<Command-MouseWheel>", self.on_zoom)
+
+        # For panning support (drag)
+        self.canvas_widget.bind("<ButtonPress-1>", self.start_pan)
+        self.canvas_widget.bind("<B1-Motion>", self.pan)
         
     def setup_bottom_frame(self):
         # Bottom frame for download and other options
@@ -290,11 +276,26 @@ class MarkdownTableVisualizer:
                 row_color = row_bg[i % len(row_bg)]
                 cell_colors.append([row_color] * len(visible_headers))
             
-            # Size the figure based on visible content
-            row_count = len(cell_text) + 1
-            col_count = len(visible_headers)
-            fig_width = min(32, max(6, col_count * 1.2))
-            fig_height = min(18, max(4, row_count * 0.35))
+            # Calculate column widths and row heights heuristically
+            max_col_widths = [max(10, len(h)) for h in visible_headers]
+            total_lines = 2 # Header spacing margin
+            
+            for row in cell_text:
+                row_lines = 1
+                for i, cell in enumerate(row):
+                    lines = cell.split('\n')
+                    max_line_len = max([len(line) for line in lines] + [0])
+                    if max_line_len > max_col_widths[i]:
+                        max_col_widths[i] = max_line_len
+                    row_lines = max(row_lines, len(lines))
+                total_lines += row_lines
+                
+            total_chars_width = sum(max_col_widths)
+            col_widths = [w / total_chars_width for w in max_col_widths] if total_chars_width > 0 else None
+            
+            # Size the figure based on text content and zoom factor
+            fig_width = max(10.0, total_chars_width * 0.12 * self.zoom_factor)
+            fig_height = max(5.0, total_lines * 0.3 * self.zoom_factor)
             self.fig.set_size_inches(fig_width, fig_height)
 
             # Create the table
@@ -304,13 +305,13 @@ class MarkdownTableVisualizer:
                 loc='center',
                 cellLoc='center',
                 colColours=[header_bg] * len(visible_headers),
-                cellColours=cell_colors
+                cellColours=cell_colors,
+                colWidths=col_widths,
+                bbox=[0, 0, 1, 1]
             )
             
             # Style the table
             table.auto_set_font_size(False)
-            table.scale(1.2, 1.5)  # Adjust table size
-            table.auto_set_column_width(col=list(range(len(visible_headers))))
             
             # Apply styling to headers (always bold)
             for i in range(len(visible_headers)):
@@ -339,20 +340,39 @@ class MarkdownTableVisualizer:
         except Exception as e:
             messagebox.showerror("Error", f"Error rendering table: {str(e)}")
 
-    def update_scroll_region(self, event=None):
-        if event is not None and event.widget == self.viz_canvas:
-            self.viz_canvas.itemconfigure(self.canvas_window, width=event.width)
+    def on_canvas_configure(self, event):
+        self.center_canvas_window()
+
+    def update_scroll_region(self):
         self.viz_canvas.configure(scrollregion=self.viz_canvas.bbox("all"))
+        self.center_canvas_window()
 
     def sync_canvas_window_size(self):
         self.canvas_widget.update_idletasks()
-        width = self.canvas_widget.winfo_reqwidth()
-        height = self.canvas_widget.winfo_reqheight()
+        width = int(self.fig.get_figwidth() * self.fig.dpi)
+        height = int(self.fig.get_figheight() * self.fig.dpi)
         self.viz_canvas.itemconfigure(self.canvas_window, width=width, height=height)
 
     def refresh_canvas_view(self):
         self.sync_canvas_window_size()
         self.update_scroll_region()
+
+    def center_canvas_window(self):
+        # Prevent layout stalls while panning by relying on winfo_width directly
+        canvas_width = self.viz_canvas.winfo_width()
+        canvas_height = self.viz_canvas.winfo_height()
+        
+        bbox = self.viz_canvas.bbox("all")
+        if not bbox:
+            return
+            
+        content_width = bbox[2] - bbox[0]
+        content_height = bbox[3] - bbox[1]
+
+        x_offset = max(0, int((canvas_width - content_width) / 2))
+        y_offset = max(0, int((canvas_height - content_height) / 2))
+        
+        self.viz_canvas.coords(self.canvas_window, x_offset, y_offset)
 
     def on_mousewheel(self, event):
         if event.delta:
@@ -361,6 +381,22 @@ class MarkdownTableVisualizer:
     def on_shift_mousewheel(self, event):
         if event.delta:
             self.viz_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def on_zoom(self, event):
+        if event.delta > 0:
+            self.zoom_factor *= 1.1
+        else:
+            self.zoom_factor /= 1.1
+            
+        # Prevent zooming out too much
+        self.zoom_factor = max(0.2, self.zoom_factor)
+        self.render_table()
+
+    def start_pan(self, event):
+        self.viz_canvas.scan_mark(event.x, event.y)
+
+    def pan(self, event):
+        self.viz_canvas.scan_dragto(event.x, event.y, gain=1)
 
     def sanitize_cell_text(self, text):
         cleaned = text.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
