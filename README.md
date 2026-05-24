@@ -48,7 +48,21 @@ python MarkdownTableVisualizer.py
 ```
 
 ## Data
-- `research_dataframe.csv` is the main dataset used by the notebook and plotting scripts.
+- `research_dataframe.csv` is the main dataset used by the notebook and plotting scripts. This file is generated in `Graphs.ipynb` from `Table.md`.
 
 ## Notes
 - `Table.py` and `Table.tex` are generated artifacts. Re-run the conversion scripts after editing `Table.md`.
+
+## Citing
+If you use this repository or its data in your work, please cite the survey:
+```
+@misc{antunes2025fpgabasedneuralnetworkaccelerators,
+      title={FPGA-Based Neural Network Accelerators for Space Applications: A Survey}, 
+      author={Pedro Antunes and Artur Podobas},
+      year={2025},
+      eprint={2504.16173},
+      archivePrefix={arXiv},
+      primaryClass={cs.AR},
+      url={https://arxiv.org/abs/2504.16173}, 
+}
+```

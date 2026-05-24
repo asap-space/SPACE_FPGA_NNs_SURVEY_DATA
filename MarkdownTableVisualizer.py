@@ -3,9 +3,6 @@ from tkinter import ttk, filedialog, messagebox
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import re
-import os
-import io
-from PIL import Image
 
 class MarkdownTableVisualizer:
     def __init__(self, root):
@@ -13,6 +10,9 @@ class MarkdownTableVisualizer:
         self.root.title("Markdown Table Visualizer")
         self.root.geometry("1200x700")
         self.root.minsize(800, 600)
+
+        self.current_headers = []
+        self.markdown_text = ""
         
         # Set up the main frame
         self.main_frame = ttk.Frame(root)
@@ -34,38 +34,17 @@ class MarkdownTableVisualizer:
         self.setup_right_frame()
         self.setup_bottom_frame()
         
-        # Add sample table for demonstration
-        self.markdown_input.insert(tk.END, """| Name | Age | City |
-|------|-----|------|
-| **John** | 30  | New York |
-| *Alice* | 25 | London |
-| Bob | **35** | Paris |
-| Eve | 28 | **Tokyo** |""")
-        
-        # Initial render
-        # Wait a short moment before rendering to ensure UI is fully loaded
-        self.root.after(100, self.render_table)
-        
     def setup_left_frame(self):
         # Title
-        self.left_title = ttk.Label(self.left_frame, text="Markdown Table Input", font=("Arial", 12, "bold"))
+        self.left_title = ttk.Label(self.left_frame, text="Markdown Table File", font=("Arial", 12, "bold"))
         self.left_title.pack(pady=(0, 5), fill=tk.X)
-        
-        # Markdown input
-        self.input_frame = ttk.Frame(self.left_frame)
-        self.input_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.markdown_input = tk.Text(self.input_frame, wrap=tk.WORD, font=("Courier", 12))
-        self.markdown_input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # Scrollbar for text input
-        self.input_scrollbar = ttk.Scrollbar(self.input_frame, command=self.markdown_input.yview)
-        self.input_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.markdown_input.config(yscrollcommand=self.input_scrollbar.set)
-        
-        # Button to render table
-        self.render_button = ttk.Button(self.left_frame, text="Render Table", command=self.render_table)
-        self.render_button.pack(pady=10, fill=tk.X)
+
+        # File loader
+        self.file_button_frame = ttk.Frame(self.left_frame)
+        self.file_button_frame.pack(fill=tk.X, pady=(8, 0))
+
+        self.file_button = ttk.Button(self.file_button_frame, text="Load Markdown File", command=self.load_markdown_file)
+        self.file_button.pack(fill=tk.X, padx=6)
         
     def setup_right_frame(self):
         # Title
@@ -75,21 +54,44 @@ class MarkdownTableVisualizer:
         # Frame for visualization
         self.viz_frame = ttk.Frame(self.right_frame)
         self.viz_frame.pack(fill=tk.BOTH, expand=True)
-        
+
+        # Scrollable container for the matplotlib canvas
+        self.viz_canvas = tk.Canvas(self.viz_frame, highlightthickness=0)
+        self.viz_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.viz_scrollbar_y = ttk.Scrollbar(self.viz_frame, orient=tk.VERTICAL, command=self.viz_canvas.yview)
+        self.viz_scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.viz_scrollbar_x = ttk.Scrollbar(self.right_frame, orient=tk.HORIZONTAL, command=self.viz_canvas.xview)
+        self.viz_scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.viz_canvas.configure(yscrollcommand=self.viz_scrollbar_y.set, xscrollcommand=self.viz_scrollbar_x.set)
+
+        self.viz_container = ttk.Frame(self.viz_canvas)
+        self.canvas_window = self.viz_canvas.create_window((0, 0), window=self.viz_container, anchor="nw")
+        self.viz_container.bind("<Configure>", self.update_scroll_region)
+
         # Initially empty - will be filled by render_table()
         self.fig = plt.Figure(figsize=(6, 4), dpi=100)
-        self.canvas = FigureCanvasTkAgg(self.fig, self.viz_frame)
+        self.canvas = FigureCanvasTkAgg(self.fig, self.viz_container)
         self.canvas_widget = self.canvas.get_tk_widget()
         self.canvas_widget.pack(fill=tk.BOTH, expand=True)
+
+        self.viz_canvas.bind("<Configure>", self.update_scroll_region)
+        self.viz_container.bind("<MouseWheel>", self.on_mousewheel)
+        self.viz_container.bind("<Shift-MouseWheel>", self.on_shift_mousewheel)
         
     def setup_bottom_frame(self):
         # Bottom frame for download and other options
         self.bottom_frame = ttk.Frame(self.main_frame)
         self.bottom_frame.pack(fill=tk.X, pady=(10, 0))
+
+        self.left_bottom = ttk.Frame(self.bottom_frame)
+        self.left_bottom.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         
         # Styling options frame
-        self.style_frame = ttk.LabelFrame(self.bottom_frame, text="Styling Options")
-        self.style_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.style_frame = ttk.LabelFrame(self.left_bottom, text="Styling Options")
+        self.style_frame.pack(fill=tk.X, expand=True)
         
         # Colors
         self.color_frame = ttk.Frame(self.style_frame)
@@ -113,10 +115,32 @@ class MarkdownTableVisualizer:
         self.font_size = ttk.Spinbox(self.text_frame, from_=8, to=16, width=3)
         self.font_size.set(10)
         self.font_size.pack(side=tk.LEFT, padx=5)
+
+        # Column filter frame
+        self.column_frame = ttk.LabelFrame(self.left_bottom, text="Column Filter (Hide)")
+        self.column_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+
+        self.column_list_frame = ttk.Frame(self.column_frame)
+        self.column_list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.column_listbox = tk.Listbox(self.column_list_frame, selectmode=tk.MULTIPLE, height=6)
+        self.column_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.column_scrollbar = ttk.Scrollbar(self.column_list_frame, command=self.column_listbox.yview)
+        self.column_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.column_listbox.config(yscrollcommand=self.column_scrollbar.set)
+
+        self.column_button_frame = ttk.Frame(self.column_frame)
+        self.column_button_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+        self.show_all_button = ttk.Button(self.column_button_frame, text="Show All Columns", command=self.show_all_columns)
+        self.show_all_button.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.column_listbox.bind("<<ListboxSelect>>", lambda event: self.render_table())
         
         # File options frame
         self.file_frame = ttk.Frame(self.bottom_frame)
-        self.file_frame.pack(side=tk.RIGHT, fill=tk.X, padx=(5, 0))
+        self.file_frame.pack(side=tk.RIGHT, fill=tk.X, padx=(5, 0), pady=(4, 0))
         
         # Image format selection
         ttk.Label(self.file_frame, text="Image Format:").pack(side=tk.LEFT, padx=5)
@@ -139,25 +163,14 @@ class MarkdownTableVisualizer:
         lines = markdown_text.strip().split('\n')
         if len(lines) < 3:  # Need at least header, separator, and one data row
             return None, None
-        
-        # Extract headers by splitting on pipe and removing empty entries
-        header_line = lines[0].strip()
-        if not header_line.startswith('|'):
-            header_line = '|' + header_line
-        if not header_line.endswith('|'):
-            header_line = header_line + '|'
-        
+
+        header_line = self.normalize_pipe_line(lines[0])
         headers = [h.strip() for h in header_line.split('|')[1:-1]]
         if not headers:
             return None, None
         
         # Validate separator line (second line)
-        sep_line = lines[1].strip()
-        if not sep_line.startswith('|'):
-            sep_line = '|' + sep_line
-        if not sep_line.endswith('|'):
-            sep_line = sep_line + '|'
-            
+        sep_line = self.normalize_pipe_line(lines[1])
         separators = sep_line.split('|')[1:-1]
         if not all(all(c in '|-:' for c in sep.strip()) for sep in separators):
             return None, None
@@ -167,15 +180,19 @@ class MarkdownTableVisualizer:
         for i in range(2, len(lines)):
             row_line = lines[i].strip()
             if row_line:
-                if not row_line.startswith('|'):
-                    row_line = '|' + row_line
-                if not row_line.endswith('|'):
-                    row_line = row_line + '|'
-                    
+                row_line = self.normalize_pipe_line(row_line)
                 row_data = [cell.strip() for cell in row_line.split('|')[1:-1]]
                 data.append(row_data)
         
         return headers, data
+
+    def normalize_pipe_line(self, line):
+        stripped = line.strip()
+        if not stripped.startswith('|'):
+            stripped = '|' + stripped
+        if not stripped.endswith('|'):
+            stripped = stripped + '|'
+        return stripped
     
     def parse_markdown_formatting(self, text):
         """Parse markdown formatting in text and return formatting info"""
@@ -192,7 +209,7 @@ class MarkdownTableVisualizer:
         if bold_match:
             is_bold = True
             # Replace the bold text, preserving the content
-            processed_text = re.sub(bold_pattern, r'\2', processed_text)
+            processed_text = re.sub(bold_pattern, lambda m: m.group(2), processed_text)
         
         # Check for italic (either *text* or _text_)
         # But make sure it's not part of a bold marker we already processed
@@ -203,7 +220,7 @@ class MarkdownTableVisualizer:
             # Get the content from whichever group matched
             italic_content = italic_match.group(1) if italic_match.group(1) is not None else italic_match.group(2)
             # Replace the italic text
-            processed_text = re.sub(italic_pattern, italic_content, processed_text, 1)
+            processed_text = re.sub(italic_pattern, lambda m: italic_content, processed_text, 1)
         
         return {
             'original': original_text,
@@ -215,11 +232,20 @@ class MarkdownTableVisualizer:
     def render_table(self):
         """Render the markdown table as an image"""
         try:
-            markdown_text = self.markdown_input.get("1.0", tk.END)
+            markdown_text = self.markdown_text
+            if not markdown_text.strip():
+                messagebox.showerror("Error", "Load a markdown table file first")
+                return
             headers, data = self.parse_markdown_table(markdown_text)
             
             if not headers or not data:
                 messagebox.showerror("Error", "Invalid markdown table format")
+                return
+
+            self.update_column_filter(headers)
+            visible_headers, visible_data = self.apply_column_filter(headers, data)
+            if not visible_headers:
+                messagebox.showerror("Error", "All columns are hidden. Show at least one column.")
                 return
             
             # Create new figure
@@ -238,13 +264,13 @@ class MarkdownTableVisualizer:
             cell_text = []
             cell_formatting = []
             
-            for row in data:
+            for row in visible_data:
                 # Pad row if needed
-                while len(row) < len(headers):
+                while len(row) < len(visible_headers):
                     row.append('')
                 
                 # Keep only columns that match headers
-                row = row[:len(headers)]
+                row = row[:len(visible_headers)]
                 
                 # Process text and store formatting
                 row_text = []
@@ -252,7 +278,7 @@ class MarkdownTableVisualizer:
                 
                 for cell in row:
                     formatting = self.parse_markdown_formatting(cell)
-                    row_text.append(formatting['text'])
+                    row_text.append(self.sanitize_cell_text(formatting['text']))
                     row_format.append(formatting)
                 
                 cell_text.append(row_text)
@@ -262,30 +288,38 @@ class MarkdownTableVisualizer:
             cell_colors = []
             for i in range(len(cell_text)):
                 row_color = row_bg[i % len(row_bg)]
-                cell_colors.append([row_color] * len(headers))
+                cell_colors.append([row_color] * len(visible_headers))
             
+            # Size the figure based on visible content
+            row_count = len(cell_text) + 1
+            col_count = len(visible_headers)
+            fig_width = min(32, max(6, col_count * 1.2))
+            fig_height = min(18, max(4, row_count * 0.35))
+            self.fig.set_size_inches(fig_width, fig_height)
+
             # Create the table
             table = ax.table(
                 cellText=cell_text,
-                colLabels=headers,
+                colLabels=visible_headers,
                 loc='center',
                 cellLoc='center',
-                colColours=[header_bg] * len(headers),
+                colColours=[header_bg] * len(visible_headers),
                 cellColours=cell_colors
             )
             
             # Style the table
             table.auto_set_font_size(False)
             table.scale(1.2, 1.5)  # Adjust table size
+            table.auto_set_column_width(col=list(range(len(visible_headers))))
             
             # Apply styling to headers (always bold)
-            for i in range(len(headers)):
+            for i in range(len(visible_headers)):
                 cell = table.get_celld()[(0, i)]
                 cell.set_text_props(fontsize=font_size, fontweight='bold')
                 
             # Apply styling to data cells based on markdown formatting
             for i in range(len(cell_text)):
-                for j in range(len(headers)):
+                for j in range(len(visible_headers)):
                     cell = table.get_celld()[(i+1, j)]
                     format_info = cell_formatting[i][j]
                     
@@ -296,13 +330,65 @@ class MarkdownTableVisualizer:
                         fontstyle=format_info['style']
                     )
             
-            # Adjust layout
-            self.fig.tight_layout()
+            # Adjust layout without tight_layout warnings
+            self.fig.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.01)
             
             # Display the table
             self.canvas.draw()
+            self.root.after(0, self.refresh_canvas_view)
         except Exception as e:
             messagebox.showerror("Error", f"Error rendering table: {str(e)}")
+
+    def update_scroll_region(self, event=None):
+        if event is not None and event.widget == self.viz_canvas:
+            self.viz_canvas.itemconfigure(self.canvas_window, width=event.width)
+        self.viz_canvas.configure(scrollregion=self.viz_canvas.bbox("all"))
+
+    def sync_canvas_window_size(self):
+        self.canvas_widget.update_idletasks()
+        width = self.canvas_widget.winfo_reqwidth()
+        height = self.canvas_widget.winfo_reqheight()
+        self.viz_canvas.itemconfigure(self.canvas_window, width=width, height=height)
+
+    def refresh_canvas_view(self):
+        self.sync_canvas_window_size()
+        self.update_scroll_region()
+
+    def on_mousewheel(self, event):
+        if event.delta:
+            self.viz_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def on_shift_mousewheel(self, event):
+        if event.delta:
+            self.viz_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def sanitize_cell_text(self, text):
+        cleaned = text.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+        return cleaned.replace("$", r"\$")
+
+    def update_column_filter(self, headers):
+        if headers == self.current_headers:
+            return
+
+        self.current_headers = headers
+        self.column_listbox.delete(0, tk.END)
+        for header in headers:
+            self.column_listbox.insert(tk.END, header)
+
+    def apply_column_filter(self, headers, data):
+        hidden = {self.column_listbox.get(index) for index in self.column_listbox.curselection()}
+
+        visible_indices = [i for i, header in enumerate(headers) if header not in hidden]
+        visible_headers = [headers[i] for i in visible_indices]
+        visible_data = []
+        for row in data:
+            visible_data.append([row[i] if i < len(row) else '' for i in visible_indices])
+
+        return visible_headers, visible_data
+
+    def show_all_columns(self):
+        self.column_listbox.selection_clear(0, tk.END)
+        self.render_table()
     
     def download_image(self):
         """Save the table as an image file"""
@@ -330,38 +416,23 @@ class MarkdownTableVisualizer:
                 messagebox.showinfo("Success", f"Image saved successfully to {file_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Error saving image: {str(e)}")
-            
-    def copy_to_clipboard(self):
-        """Copy the table image to clipboard"""
+
+    def load_markdown_file(self):
+        """Load markdown text from a file"""
         try:
-            # Save figure to buffer
-            buf = io.BytesIO()
-            self.fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-            buf.seek(0)
-            
-            # Convert to PIL Image
-            image = Image.open(buf)
-            
-            # Copy to clipboard (platform-specific)
-            if os.name == 'nt':  # Windows
-                import win32clipboard
-                from io import BytesIO
-                
-                output = BytesIO()
-                image.convert('RGB').save(output, 'BMP')
-                data = output.getvalue()[14:]
-                output.close()
-                
-                win32clipboard.OpenClipboard()
-                win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
-                win32clipboard.CloseClipboard()
-                
-                messagebox.showinfo("Success", "Image copied to clipboard")
-            else:
-                messagebox.showinfo("Not Supported", "Clipboard copy is only supported on Windows")
+            file_path = filedialog.askopenfilename(
+                filetypes=[("Markdown files", "*.md"), ("Text files", "*.txt"), ("All files", "*")]
+            )
+            if not file_path:
+                return
+
+            with open(file_path, "r", encoding="utf-8") as handle:
+                content = handle.read()
+
+            self.markdown_text = content
+            self.render_table()
         except Exception as e:
-            messagebox.showerror("Error", f"Error copying to clipboard: {str(e)}")
+            messagebox.showerror("Error", f"Error loading file: {str(e)}")
 
 def main():
     root = tk.Tk()
