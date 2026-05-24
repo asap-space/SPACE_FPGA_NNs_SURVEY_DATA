@@ -4,7 +4,6 @@ Utilities and notes for generating tables, plots, and exports for the survey mat
 
 ## Contents
 - `Graphs.ipynb`: Notebook for plotting and analysis using `research_dataframe.csv`.
-- `MarkdownTableVisualizer.py`: Tkinter app to preview a Markdown table and export it as an image.
 - `Md2Py.py`: Parses a Markdown table into a Python file with paper dictionaries and a Pandas helper.
 - `Md2TeX.py`: Converts a Markdown table into LaTeX `tabular` sections.
 - `Table.md`: Source Markdown table.
@@ -39,12 +38,6 @@ Convert the Markdown table to LaTeX:
 
 ```bash
 python Md2TeX.py Table.md > Table.tex
-```
-
-Launch the Markdown table visualizer:
-
-```bash
-python MarkdownTableVisualizer.py
 ```
 
 ## Data
