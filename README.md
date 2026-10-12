@@ -59,7 +59,7 @@ If you use this repository or its data in your work, please cite the survey:
   url = {https://doi.org/10.1145/3857797},
   doi = {10.1145/3857797},
   abstract = {Space missions are growing ever more ambitious, placing greater demands on onboard computing. Field-programmable gate arrays (FPGAs) have garnered interest due to their reconfigurability and cost-effectiveness. At the same time, neural network (NN)-based methods are proving invaluable for critical spacecraft tasks such as autonomous operations, remote sensing, selective downlink, and data compression. This survey reviews and classifies the state of the art in FPGA-based NN accelerators for space missions. We examine current trends, highlight key challenges, and suggest directions for future research. This work highlights key aspects for integrating high-performance NN acceleration into next-generation spacecraft computing systems.},
-note = {Just Accepted},
+  note = {Just Accepted},
   journal = {ACM Comput. Surv.},
   month = oct,
   keywords = {Field Programmable Gate Arrays (FPGAs), Deep Learning, Onboard Processing, Space Missions, Edge AI, Fault Tolerance}
